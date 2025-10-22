@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Work Tracker</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background: #f9f9f9; }
+    h1 { color: #333; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+    th { background: #f0f0f0; }
+    .modal {
+      display: none;
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.4);
+      justify-content: center; align-items: center;
+      z-index: 1000;
+    }
+    .modal-content {
+      background: #fff; padding: 30px 20px; border-radius: 12px;
+      width: 320px; text-align: center; position: relative;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+      animation: slideDown 0.3s ease-out;
+    }
+    @keyframes slideDown {
+      from { transform: translateY(-50px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .close-btn {
+      position: absolute; top: 10px; right: 15px;
+      cursor: pointer; font-size: 20px; font-weight: bold; color: #555;
+      transition: color 0.2s;
+    }
+    .close-btn:hover { color: #e74c3c; }
+    input, select { width: 90%; padding: 8px 10px; margin-top: 5px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; }
+    button { padding: 8px 16px; margin-top: 10px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+    #saveTaskBtn { background: #4CAF50; color: #fff; }
+    #saveTaskBtn:hover { background: #45a049; }
+    #manualEntryBtn, #exportCsvBtn { background: #3498db; color: #fff; margin-right: 10px; }
+    #manualEntryBtn:hover, #exportCsvBtn:hover { background: #2980b9; }
+  </style>
+</head>
+<body>
+  <h1>⏱️ My Work Tracker</h1>
+
+  <button id="manualEntryBtn">➕ Add Manual Entry</button>
+  <button id="exportCsvBtn">📥 Export CSV</button>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Time Slot</th>
+        <th>Task</th>
+        <th>Time Spent (mins)</th>
+      </tr>
+    </thead>
+    <tbody id="taskLog"></tbody>
+  </table>
+
+  <!-- Popup Modal -->
+  <div id="taskModal" class="modal">
+    <div class="modal-content">
+      <span class="close-btn" id="closeModal">&times;</span>
+      <h3>Log Your Work</h3>
+      <label>Time Slot:</label><br>
+      <select id="timeSlotSelect"></select><br><br>
+      <label>Task:</label><br>
+      <input type="text" id="taskInput" placeholder="Enter task name"><br><br>
+      <label>Minutes Worked:</label><br>
+      <input type="number" id="minutesInput" min="0" max="60" placeholder="e.g., 60"><br><br>
+      <button id="saveTaskBtn">Save</button>
+    </div>
+  </div>
+
+  <script>
+    const taskModal = document.getElementById("taskModal");
+    const taskLog = document.getElementById("taskLog");
+    const saveBtn = document.getElementById("saveTaskBtn");
+    const closeModalBtn = document.getElementById("closeModal");
+    const manualEntryBtn = document.getElementById("manualEntryBtn");
+    const exportCsvBtn = document.getElementById("exportCsvBtn");
+    const timeSlotSelect = document.getElementById("timeSlotSelect");
+
+    let logs = JSON.parse(localStorage.getItem("workLogs")) || [];
+
+    function generateTimeSlots() {
+      timeSlotSelect.innerHTML = "";
+      for (let h = 0; h < 24; h++) {
+        let startHour = h;
+        let endHour = (h + 1) % 24;
+        function formatHour(hour) {
+          let suffix = hour >= 12 ? "PM" : "AM";
+          let hour12 = hour % 12 || 12;
+          return hour12 + " " + suffix;
+        }
+        const option = document.createElement("option");
+        option.value = `${formatHour(startHour)} - ${formatHour(endHour)}`;
+        option.text = `${formatHour(startHour)} - ${formatHour(endHour)}`;
+        timeSlotSelect.appendChild(option);
+      }
+    }
+
+    generateTimeSlots();
+    renderLogs();
+
+    // Auto hourly popup
+    setInterval(() => {
+      const now = new Date();
+      const startHour = now.getHours();
+      timeSlotSelect.value = timeSlotSelect.options[startHour].value;
+      taskModal.style.display = "flex";
+    }, 3600000);
+
+    saveBtn.addEventListener("click", () => saveTask());
+    closeModalBtn.addEventListener("click", () => { taskModal.style.display = "none"; });
+    manualEntryBtn.addEventListener("click", () => { taskModal.style.display = "flex"; });
+
+    exportCsvBtn.addEventListener("click", () => {
+      const today = new Date().toISOString().split('T')[0];
+      const todayLogs = logs.filter(l => l.date === today);
+      if (!todayLogs.length) { alert("No logs to export for today."); return; }
+      let csv = "Time Slot,Task,Minutes Worked\n";
+      todayLogs.forEach(l => csv += `${l.timeSlot},${l.task},${l.minutes}\n`);
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `work_log_${today}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    function saveTask() {
+      const task = document.getElementById("taskInput").value.trim();
+      const minutes = document.getElementById("minutesInput").value.trim();
+      const timeSlot = timeSlotSelect.value;
+
+      if (!task || !minutes) {
+        alert("Please enter task and minutes");
+        return;
+      }
+
+      const dateStr = new Date().toISOString().split('T')[0];
+
+      logs.push({ date: dateStr, timeSlot, task, minutes });
+      localStorage.setItem("workLogs", JSON.stringify(logs));
+      renderLogs();
+      taskModal.style.display = "none";
+      document.getElementById("taskInput").value = "";
+      document.getElementById("minutesInput").value = "";
+    }
+
+    function renderLogs() {
+      taskLog.innerHTML = "";
+      const today = new Date().toISOString().split('T')[0];
+      const todayLogs = logs.filter(l => l.date === today);
+      todayLogs.forEach(entry => {
+        const row = `<tr>
+          <td>${entry.timeSlot}</td>
+          <td>${entry.task}</td>
+          <td>${entry.minutes}</td>
+        </tr>`;
+        taskLog.innerHTML += row;
+      });
+    }
+  </script>
+</body>
+</html>
